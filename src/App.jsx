@@ -1,11 +1,19 @@
 import React, { useState, useEffect } from 'react';  
 import './App.css';  
-import translations from './translations.json'; 
+import translations from './translations.json';   
 
 const App = () => {  
   const [activeTab, setActiveTab] = useState('vcard');  
-  const [isDark, setIsDark] = useState(false);  
-  const [selectedLanguage, setSelectedLanguage] = useState('en');
+  const [isDark, setIsDark] = useState(() => {  
+    // Load dark mode from local storage or default to system preference  
+    const storedIsDark = localStorage.getItem('isDark');  
+    return storedIsDark ? JSON.parse(storedIsDark) : window.matchMedia('(prefers-color-scheme: dark)').matches;  
+  });  
+  const [selectedLanguage, setSelectedLanguage] = useState(() => {  
+    // Load language from local storage or default to English  
+    return localStorage.getItem('selectedLanguage') || 'en';  
+  });  
+  
   const [vCardData, setVCardData] = useState({  
     firstName: '',  
     lastName: '',  
@@ -16,18 +24,23 @@ const App = () => {
   const [textData, setTextData] = useState('');  
   const [urlData, setUrlData] = useState('');  
   const [qrResolution, setQrResolution] = useState('200');  
+  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
 
-  // Auto-detect system theme  
+  // Load dark mode and language state from local storage and setup media query listener  
   useEffect(() => {  
-    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {  
-      setIsDark(true);  
-    }  
-
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');  
     const handleChange = (e) => setIsDark(e.matches);  
     mediaQuery.addListener(handleChange);  
     return () => mediaQuery.removeListener(handleChange);  
   }, []);  
+
+  useEffect(() => {  
+    localStorage.setItem('selectedLanguage', selectedLanguage);  
+  }, [selectedLanguage]);  
+
+  useEffect(() => {  
+    localStorage.setItem('isDark', JSON.stringify(isDark));  
+  }, [isDark]);  
 
   const generateVCard = () => {  
     const vCard = `BEGIN:VCARD  
@@ -64,7 +77,7 @@ END:VCARD`;
   };  
 
   const toggleDarkMode = () => {  
-    setIsDark(!isDark);  
+    setIsDark(prev => !prev);  
   };  
 
   const handleLanguageChange = (event) => {  
@@ -74,12 +87,10 @@ END:VCARD`;
   return (  
     <div className={`min-h-screen ${isDark ? 'dark bg-gray-900' : 'bg-gray-100 transition-colors duration-300'}`}>  
       <div className="max-w-2xl px-4 py-8 mx-auto">  
-
         {/* Header with Logo and Title */}  
         <div className="flex items-center mb-4">  
           <div className="flex items-center justify-center w-10 h-10 mr-2 bg-gray-300 rounded-full dark:bg-gray-700">  
-            {/* Placeholder for future logo */}  
-            <img className="w-12" src="chinchillaqr.webp"/>  
+            <img className="w-12" src="chinchillaqr.webp" alt="Chinchilla QR Logo"/>  
           </div>  
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Chinchilla QR</h1>  
         </div>  
@@ -125,6 +136,7 @@ END:VCARD`;
           {activeTab === 'vcard' && (  
             <div className="space-y-6">  
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2">  
+                {/* VCard Data Input Fields */}  
                 <div className="space-y-2">  
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{translations[selectedLanguage]['firstName']}</label>  
                   <input  
@@ -305,6 +317,28 @@ END:VCARD`;
             </div>  
           )}  
         </div>  
+
+        {/* Footer Section */}  
+        <footer className="mt-10 mr-4 text-sm text-center text-gray-600">  
+          &copy; {currentYear} ·  
+          <a  
+            className="font-bold text-transparent bg-clip-text bg-gradient-to-b from-blue-400 via-blue-300 to-cyan-500 hover:text-blue-600 hover:underline"  
+            href="https://www.colibricreativeweb.com"  
+            target="_blank"  
+            rel="noopener noreferrer"  
+          >  
+            Colibri Creative Web  
+          </a>  
+          ·  
+          <a  
+            className="font-bold text-transparent bg-clip-text bg-gradient-to-b from-blue-400 via-blue-300 to-cyan-500 hover:text-blue-600 hover:underline"  
+            href="https://github.com/colibricreativeweb/chinchilla-qr"  
+            target="_blank"  
+            rel="noopener noreferrer"  
+          >  
+            💖 Contribute  
+          </a>  
+        </footer>  
       </div>  
     </div>  
   );  
