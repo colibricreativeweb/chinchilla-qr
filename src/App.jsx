@@ -3,20 +3,22 @@ import './App.css';
 import translations from './translations.json';   
 
 const App = () => {  
+  // State management
   const [activeTab, setActiveTab] = useState('vcard');  
   const [isDark, setIsDark] = useState(() => {  
-    // Load dark mode from local storage or default to system preference  
     const storedIsDark = localStorage.getItem('isDark');  
     return storedIsDark ? JSON.parse(storedIsDark) : window.matchMedia('(prefers-color-scheme: dark)').matches;  
   });  
   const [selectedLanguage, setSelectedLanguage] = useState(() => {  
-    // Load language from local storage or default to English  
     return localStorage.getItem('selectedLanguage') || 'en';  
   });  
   
+  // vCard data structure
   const [vCardData, setVCardData] = useState({  
     firstName: '',  
     lastName: '',  
+    position: '',  
+    company: '',  
     phone: '',  
     email: '',  
     note: '',  
@@ -24,9 +26,9 @@ const App = () => {
   const [textData, setTextData] = useState('');  
   const [urlData, setUrlData] = useState('');  
   const [qrResolution, setQrResolution] = useState('200');  
-  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
+  const [currentYear] = useState(new Date().getFullYear());
 
-  // Load dark mode and language state from local storage and setup media query listener  
+  // Dark mode and language preferences
   useEffect(() => {  
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');  
     const handleChange = (e) => setIsDark(e.matches);  
@@ -42,11 +44,14 @@ const App = () => {
     localStorage.setItem('isDark', JSON.stringify(isDark));  
   }, [isDark]);  
 
+  // vCard generation
   const generateVCard = () => {  
     const vCard = `BEGIN:VCARD  
 VERSION:3.0  
 N:${vCardData.lastName};${vCardData.firstName};;;  
 FN:${vCardData.firstName} ${vCardData.lastName}  
+${vCardData.position ? `TITLE:${vCardData.position}\n` : ''}  
+${vCardData.company ? `ORG:${vCardData.company}\n` : ''}  
 TEL;TYPE=CELL:${vCardData.phone}  
 EMAIL:${vCardData.email}  
 NOTE:${vCardData.note}  
@@ -54,6 +59,7 @@ END:VCARD`;
     return encodeURIComponent(vCard);  
   };  
 
+  // QR code generation utilities
   const getQRCodeUrl = (data, type = 'text') => {  
     const finalData = type === 'vcard' ? generateVCard() : encodeURIComponent(data);  
     return `https://api.qrserver.com/v1/create-qr-code/?size=${qrResolution}x${qrResolution}&data=${finalData}`;  
@@ -72,22 +78,18 @@ END:VCARD`;
       document.body.removeChild(a);  
       window.URL.revokeObjectURL(url);  
     } catch (error) {  
-      alert(translations[selectedLanguage]['downloadError']); // Use translation for error message  
+      alert(translations[selectedLanguage]['downloadError']);  
     }  
   };  
 
-  const toggleDarkMode = () => {  
-    setIsDark(prev => !prev);  
-  };  
-
-  const handleLanguageChange = (event) => {  
-    setSelectedLanguage(event.target.value); // Update the selected language  
-  };  
+  // UI handlers
+  const toggleDarkMode = () => setIsDark(prev => !prev);  
+  const handleLanguageChange = (event) => setSelectedLanguage(event.target.value);  
 
   return (  
     <div className={`min-h-screen ${isDark ? 'dark bg-gray-900' : 'bg-gray-100 transition-colors duration-300'}`}>  
       <div className="max-w-2xl px-4 py-8 mx-auto">  
-        {/* Header with Logo and Title */}  
+        {/* Header section */}
         <div className="flex items-center mb-4">  
           <div className="flex items-center justify-center w-10 h-10 mr-2 bg-gray-300 rounded-full dark:bg-gray-700">  
             <img className="w-12" src="chinchillaqr.webp" alt="Chinchilla QR Logo"/>  
@@ -95,7 +97,7 @@ END:VCARD`;
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Chinchilla QR</h1>  
         </div>  
 
-        {/* Tab Bar */}  
+        {/* Control bar */}
         <div className="flex items-center justify-between mt-2 mb-4">  
           <div className="inline-flex p-1 bg-gray-200 rounded-lg dark:bg-gray-800">  
             {['vcard', 'text', 'url'].map((tab) => (  
@@ -108,7 +110,7 @@ END:VCARD`;
                     : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'  
                   }`}  
               >  
-                {translations[selectedLanguage][tab]} {/* Use translation for tabs */}  
+                {translations[selectedLanguage][tab]}  
               </button>  
             ))}  
           </div>  
@@ -120,23 +122,22 @@ END:VCARD`;
             >  
               <option value="en">English</option>  
               <option value="es">Español</option>  
-              {/* Add other language options here */}  
             </select>  
             <button  
               onClick={toggleDarkMode}  
               className="flex items-center justify-center w-10 h-10 p-2 ml-2 text-white transition-colors duration-300 rounded-full bg-neutral-400 hover:bg-neutral-500 dark:bg-gray-700"  
             >  
-              {isDark ? '🌞' : '🌜'} {/* Emoji representation for dark/light mode */}  
+              {isDark ? '🌞' : '🌜'}  
             </button>  
           </div>  
         </div>  
 
-        {/* Content Area */}  
+        {/* Main content area */}
         <div className="p-6 bg-white shadow-sm dark:bg-gray-800 rounded-2xl">  
           {activeTab === 'vcard' && (  
             <div className="space-y-6">  
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2">  
-                {/* VCard Data Input Fields */}  
+                {/* Personal information fields */}
                 <div className="space-y-2">  
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{translations[selectedLanguage]['firstName']}</label>  
                   <input  
@@ -157,6 +158,30 @@ END:VCARD`;
                     placeholder={translations[selectedLanguage]['placeholderLastName']}  
                   />  
                 </div>  
+
+                {/* Professional information */}
+                <div className="space-y-2">  
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{translations[selectedLanguage]['position']}</label>  
+                  <input  
+                    type="text"  
+                    value={vCardData.position}  
+                    onChange={(e) => setVCardData({ ...vCardData, position: e.target.value })}  
+                    className="w-full px-4 py-3 text-gray-900 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"  
+                    placeholder={translations[selectedLanguage]['placeholderPosition']}  
+                  />  
+                </div>  
+                <div className="space-y-2">  
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{translations[selectedLanguage]['company']}</label>  
+                  <input  
+                    type="text"  
+                    value={vCardData.company}  
+                    onChange={(e) => setVCardData({ ...vCardData, company: e.target.value })}  
+                    className="w-full px-4 py-3 text-gray-900 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"  
+                    placeholder={translations[selectedLanguage]['placeholderCompany']}  
+                  />  
+                </div>  
+
+                {/* Contact information */}
                 <div className="space-y-2">  
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{translations[selectedLanguage]['phone']}</label>  
                   <input  
@@ -177,6 +202,8 @@ END:VCARD`;
                     placeholder={translations[selectedLanguage]['placeholderEmail']}  
                   />  
                 </div>  
+
+                {/* Note field */}
                 <div className="space-y-2">  
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{translations[selectedLanguage]['note']}</label>  
                   <input  
@@ -189,6 +216,7 @@ END:VCARD`;
                 </div>  
               </div>  
 
+              {/* QR Preview and Download */}
               {vCardData.firstName && vCardData.lastName && (  
                 <div className="mt-8 space-y-6">  
                   <div className="p-6 bg-white border border-gray-300 rounded-lg shadow-sm dark:border-gray-600 w-fit dark:bg-gray-700">  
@@ -199,13 +227,12 @@ END:VCARD`;
                     />  
                   </div>  
 
-                  {/* QR Code Resolution Selector */}  
                   <div className="mb-4">  
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{translations[selectedLanguage]['selectResolution']}</label>  
                     <select  
                       value={qrResolution}  
                       onChange={(e) => setQrResolution(e.target.value)}  
-                      className="w-1/4 px-3 py-2 mt-2 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white"  
+                      className="w-1/3 px-3 py-2 mt-2 border border-gray-300 rounded-lg sm:w-1/6 dark:border-gray-600 dark:bg-gray-700 dark:text-white"  
                     >  
                       <option value="200">200px</option>  
                       <option value="500">500px</option>  
@@ -216,7 +243,7 @@ END:VCARD`;
                     onClick={() => downloadQR(vCardData, 'vcard', 'contact')}  
                     className="w-full px-4 py-3 font-medium text-white transition-colors bg-blue-500 rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"  
                   >  
-                    {translations[selectedLanguage]['saveToPhotos']} {/* Use translation for button text */}  
+                    {translations[selectedLanguage]['saveToPhotos']}  
                   </button>  
                 </div>  
               )}  
@@ -246,7 +273,6 @@ END:VCARD`;
                     />  
                   </div>  
 
-                  {/* QR Code Resolution Selector */}  
                   <div className="mb-4">  
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{translations[selectedLanguage]['selectResolution']}</label>  
                     <select  
@@ -293,7 +319,6 @@ END:VCARD`;
                     />  
                   </div>  
 
-                  {/* QR Code Resolution Selector */}  
                   <div className="mb-4">  
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{translations[selectedLanguage]['selectResolution']}</label>  
                     <select  
@@ -318,7 +343,7 @@ END:VCARD`;
           )}  
         </div>  
 
-        {/* Footer Section */}  
+        {/* Footer section */}
         <footer className="mt-10 mr-4 text-sm text-center text-gray-600">  
           &copy; {currentYear} ·  
           <a  
