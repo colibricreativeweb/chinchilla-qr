@@ -22,7 +22,13 @@
     "placeholderNote": "Any additional information",  
     "placeholderTextContent": "Enter your text here",  
     "placeholderUrl": "https://example.com",  
-    "downloadError": "Failed to download QR code. Please try again."  
+    "downloadError": "Failed to download QR code. Please try again.",
+    "uploadLogo": "Upload Logo",
+    "removeLogo": "Remove Logo",
+    "clickToUpload": "Click to upload",
+    "dragDrop": "or drag and drop",
+    "supportedFormats": "SVG, PNG, JPG (max 2MB)",
+    "uploadedLogo": "Logo uploaded"
   },  
   "es": {  
     "vcard": "Contacto",  
@@ -47,6 +53,12 @@
     "placeholderNote": "Cualquier información adicional",  
     "placeholderTextContent": "Ingrese su texto aquí",  
     "placeholderUrl": "https://ejemplo.com",  
-    "downloadError": "Error al descargar el código QR. Por favor, inténtelo de nuevo."  
+    "downloadError": "Error al descargar el código QR. Por favor, inténtelo de nuevo.",
+    "uploadLogo": "Subir Logo",
+    "removeLogo": "Eliminar Logo",
+    "clickToUpload": "Haz clic para subir",
+    "dragDrop": "o arrastra y suelta",
+    "supportedFormats": "SVG, PNG, JPG (máx. 2MB)",
+    "uploadedLogo": "Logo subido"
   }  
 }
