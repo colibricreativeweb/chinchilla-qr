@@ -13,6 +13,7 @@ const App = () => {
     return localStorage.getItem('selectedLanguage') || 'en';
   });
   const [logoData, setLogoData] = useState(null);
+  const [isNegative, setIsNegative] = useState(false);
 
   // vCard data structure
   const [vCardData, setVCardData] = useState({
@@ -63,7 +64,9 @@ END:VCARD`;
   // QR code generation utilities
   const getQRCodeUrl = (data, type = 'text') => {
     const finalData = type === 'vcard' ? generateVCard() : encodeURIComponent(data);
-    return `https://api.qrserver.com/v1/create-qr-code/?size=${qrResolution}x${qrResolution}&data=${finalData}`;
+    const color = isNegative ? 'ffffff' : '000000';
+    const bgColor = isNegative ? '000000' : 'ffffff';
+    return `https://api.qrserver.com/v1/create-qr-code/?size=${qrResolution}x${qrResolution}&data=${finalData}&color=${color}&bgcolor=${bgColor}`;
   };
 
   const downloadQR = async (data, type, filename) => {
@@ -100,7 +103,7 @@ END:VCARD`;
         const x = (qrImg.width - logoSize) / 2;
         const y = (qrImg.height - logoSize) / 2;
 
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = isNegative ? '#000000' : '#ffffff';
         ctx.fillRect(x, y, logoSize, logoSize);
         ctx.drawImage(logoImg, x, y, logoSize, logoSize);
       }
@@ -143,7 +146,7 @@ END:VCARD`;
                 key={tab}
                 onClick={() => setActiveTab(tab)}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors  
-                  ${activeTab === tab
+          ${activeTab === tab
                     ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
                     : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
                   }`}
@@ -256,15 +259,39 @@ END:VCARD`;
                 {/* Note field */}
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{translations[selectedLanguage]['selectResolution']}</label>
-                  <select
-                    value={qrResolution}
-                    onChange={(e) => setQrResolution(e.target.value)}
-                    className="w-full px-3 py-2 mt-2 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                  >
-                    <option value="200">200px</option>
-                    <option value="500">500px</option>
-                    <option value="1000">1000px</option>
-                  </select>
+                  <div className="flex items-center mt-2">
+                    <select
+                      value={qrResolution}
+                      onChange={(e) => setQrResolution(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    >
+                      <option value="200">200px</option>
+                      <option value="500">500px</option>
+                      <option value="1000">1000px</option>
+                    </select>
+
+                    {/* Visual representation for QR modes */}
+                    {(activeTab === 'vcard' && vCardData.firstName && vCardData.lastName) ||
+                      (activeTab === 'text' && textData) ||
+                      (activeTab === 'url' && urlData) ? (
+                      <div className="flex items-center ml-2">
+                        <div className="relative">
+                          <img
+                            src={getQRCodeUrl(activeTab === 'vcard' ? generateVCard() : activeTab === 'text' ? textData : urlData, activeTab)}
+                            alt="Normal QR Code"
+                            className="w-10 h-10 rounded"
+                          />
+                          <span
+                            className="absolute inset-0 flex items-center justify-center text-lg cursor-pointer"
+                            onClick={() => setIsNegative(prev => !prev)}
+                            title={translations[selectedLanguage]['invertColor']}
+                          >
+                            {isNegative ? '⚫' : '⚪'}
+                          </span>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </div>
 
@@ -435,15 +462,39 @@ END:VCARD`;
 
                       <div className="mb-4">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{translations[selectedLanguage]['selectResolution']}</label>
-                        <select
-                          value={qrResolution}
-                          onChange={(e) => setQrResolution(e.target.value)}
-                          className="w-full px-3 py-2 mt-2 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                        >
-                          <option value="200">200px</option>
-                          <option value="500">500px</option>
-                          <option value="1000">1000px</option>
-                        </select>
+                        <div className="flex items-center mt-2">
+                          <select
+                            value={qrResolution}
+                            onChange={(e) => setQrResolution(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                          >
+                            <option value="200">200px</option>
+                            <option value="500">500px</option>
+                            <option value="1000">1000px</option>
+                          </select>
+
+                          {/* Visual representation for QR modes */}
+                          {(activeTab === 'vcard' && vCardData.firstName && vCardData.lastName) ||
+                            (activeTab === 'text' && textData) ||
+                            (activeTab === 'url' && urlData) ? (
+                            <div className="flex items-center ml-2">
+                              <div className="relative">
+                                <img
+                                  src={getQRCodeUrl(activeTab === 'vcard' ? generateVCard() : activeTab === 'text' ? textData : urlData, activeTab)}
+                                  alt="Normal QR Code"
+                                  className="w-10 h-10 rounded"
+                                />
+                                <span
+                                  className="absolute inset-0 flex items-center justify-center text-lg cursor-pointer"
+                                  onClick={() => setIsNegative(prev => !prev)}
+                                  title={translations[selectedLanguage]['invertColor']}
+                                >
+                                  {isNegative ? '⚫' : '⚪'}
+                                </span>
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
 
@@ -530,15 +581,39 @@ END:VCARD`;
 
                       <div className="mb-4">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{translations[selectedLanguage]['selectResolution']}</label>
-                        <select
-                          value={qrResolution}
-                          onChange={(e) => setQrResolution(e.target.value)}
-                          className="w-full px-3 py-2 mt-2 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                        >
-                          <option value="200">200px</option>
-                          <option value="500">500px</option>
-                          <option value="1000">1000px</option>
-                        </select>
+                        <div className="flex items-center mt-2">
+                          <select
+                            value={qrResolution}
+                            onChange={(e) => setQrResolution(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                          >
+                            <option value="200">200px</option>
+                            <option value="500">500px</option>
+                            <option value="1000">1000px</option>
+                          </select>
+
+                          {/* Visual representation for QR modes */}
+                          {(activeTab === 'vcard' && vCardData.firstName && vCardData.lastName) ||
+                            (activeTab === 'text' && textData) ||
+                            (activeTab === 'url' && urlData) ? (
+                            <div className="flex items-center ml-2">
+                              <div className="relative">
+                                <img
+                                  src={getQRCodeUrl(activeTab === 'vcard' ? generateVCard() : activeTab === 'text' ? textData : urlData, activeTab)}
+                                  alt="Normal QR Code"
+                                  className="w-10 h-10 rounded"
+                                />
+                                <span
+                                  className="absolute inset-0 flex items-center justify-center text-lg cursor-pointer"
+                                  onClick={() => setIsNegative(prev => !prev)}
+                                  title={translations[selectedLanguage]['invertColor']}
+                                >
+                                  {isNegative ? '⚫' : '⚪'}
+                                </span>
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
 
