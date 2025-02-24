@@ -110,13 +110,19 @@ END:VCARD`;
 
       canvas.toBlob((blob) => {
         const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${filename}.png`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
+        if (window.Telegram && window.Telegram.WebApp) {
+          // Use Telegram's API to handle the download
+          window.Telegram.WebApp.downloadFile(url, `${filename}.png`);
+        } else {
+          // Fallback for standard browsers
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${filename}.png`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+        }
       }, 'image/png');
     } catch (error) {
       alert(translations[selectedLanguage]['downloadError']);
