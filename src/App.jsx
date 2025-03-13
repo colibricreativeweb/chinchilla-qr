@@ -70,82 +70,196 @@ END:VCARD`;
   };
 
   const downloadQR = async (data, type, filename) => {
+    const MAX_RETRIES = 2;
+    const RETRY_DELAY = 300;
+    let attempt = 0;
+  
+    const errorHandler = (error) => {
+      console.error(`Attempt ${attempt} failed:`, error);
+      alert(translations[selectedLanguage]['downloadError']);
+    };
+  
+    const tryDownload = async () => {
+      try {
+        attempt++;
+        // Strategy 1: Direct base64 download for Telegram
+        if (window.Telegram?.WebApp?.downloadFile) {
+          const qrUrl = getQRCodeUrl(data, type);
+          const response = await fetch(qrUrl);
+          if (!response.ok) throw new Error('Network response error');
+          
+          // Convert directly to base64
+          const buffer = await response.arrayBuffer();
+          const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+          window.Telegram.WebApp.downloadFile(base64, `${filename}.png`);
+          return;
+        }
+  
+        // Strategy 2: Canvas-based download with forced user gesture
+        const canvas = await generateQRCanvas(data, type);
+        if (!canvas) throw new Error('Canvas generation failed');
+  
+        // Strategy 3: Mixed blob/base64 approach
+        const blob = await new Promise(resolve => 
+          canvas.toBlob(resolve, 'image/png', 1)
+        );
+        
+        // Strategy 4: Multiple download methods
+        const finalAttempt = async () => {
+          try {
+            // Method 4a: Direct file API
+            if (window.Telegram?.WebApp?.openLink) {
+              const dataUrl = canvas.toDataURL();
+              window.Telegram.WebApp.openLink(dataUrl);
+              return;
+            }
+  
+            // Method 4b: Simulated click with blob
+            const url = URL.createObjectURL(blob);
+            const tempLink = document.createElement('a');
+            tempLink.href = url;
+            tempLink.download = `${filename}.png`;
+            tempLink.style.display = 'none';
+            
+            // iOS requires actual user interaction
+            const clickEvent = new MouseEvent('click', {
+              view: window,
+              bubbles: true,
+              cancelable: true
+            });
+            
+            document.body.appendChild(tempLink);
+            tempLink.dispatchEvent(clickEvent);
+            
+            // Cleanup with retry safeguard
+            setTimeout(() => {
+              document.body.removeChild(tempLink);
+              URL.revokeObjectURL(url);
+            }, 1000);
+  
+          } catch (error) {
+            // Final fallback: Open in new tab
+            const dataUrl = canvas.toDataURL();
+            window.open(dataUrl, '_blank');
+          }
+        };
+  
+        // Execute final attempt sequence
+        await finalAttempt();
+  
+      } catch (error) {
+        if (attempt < MAX_RETRIES) {
+          setTimeout(tryDownload, RETRY_DELAY);
+        } else {
+          errorHandler(error);
+        }
+      }
+    };
+  
+    // Initial execution
+    try {
+      await tryDownload();
+    } catch (finalError) {
+      errorHandler(finalError);
+    }
+  };
+  
+  // Canvas generation with validation
+  const generateQRCanvas = async (data, type) => {
     try {
       const qrUrl = getQRCodeUrl(data, type);
       const response = await fetch(qrUrl);
-      const qrBlob = await response.blob();
-      const qrDataUrl = await new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
-        reader.readAsDataURL(qrBlob);
-      });
-
-      const qrImg = new Image();
-      await new Promise((resolve) => {
-        qrImg.onload = resolve;
-        qrImg.src = qrDataUrl;
-      });
-
+      if (!response.ok) throw new Error('Invalid QR code response');
+  
+      const imgBlob = await response.blob();
+      const imgUrl = URL.createObjectURL(imgBlob);
+      
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
-      canvas.width = qrImg.width;
-      canvas.height = qrImg.height;
-      ctx.drawImage(qrImg, 0, 0);
-
+      
+      // Load image with timeout
+      const img = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => 
+          reject(new Error('Image load timeout')), 5000);
+        
+        const img = new Image();
+        img.onload = () => {
+          clearTimeout(timer);
+          resolve(img);
+        };
+        img.onerror = reject;
+        img.src = imgUrl;
+      });
+  
+      // Set canvas dimensions
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      ctx.drawImage(img, 0, 0);
+  
+      // Add logo if present
       if (logoData) {
-        const logoImg = new Image();
-        logoImg.src = logoData;
-        await new Promise((resolve) => {
-          logoImg.onload = resolve;
+        const logoImg = await new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = reject;
+          img.src = logoData;
         });
-
-        const logoSize = Math.min(qrImg.width * 0.2, qrImg.height * 0.2);
-        const x = (qrImg.width - logoSize) / 2;
-        const y = (qrImg.height - logoSize) / 2;
-
+  
+        const logoSize = Math.min(canvas.width * 0.2, canvas.height * 0.2);
+        const x = (canvas.width - logoSize) / 2;
+        const y = (canvas.height - logoSize) / 2;
+  
         ctx.fillStyle = isNegative ? '#000000' : '#ffffff';
         ctx.fillRect(x, y, logoSize, logoSize);
         ctx.drawImage(logoImg, x, y, logoSize, logoSize);
       }
-
-      canvas.toBlob((blob) => {
-        const url = window.URL.createObjectURL(blob);
-        if (window.Telegram && window.Telegram.WebApp) {
-          // Use Telegram's API to handle the download
-          window.Telegram.WebApp.downloadFile(url, `${filename}.png`);
-        } else {
-          // Fallback for standard browsers
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `${filename}.png`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          window.URL.revokeObjectURL(url);
-        }
-      }, 'image/png');
+  
+      // Validate canvas content
+      const imageData = ctx.getImageData(0, 0, 1, 1).data;
+      if (imageData.every(channel => channel === 0)) {
+        throw new Error('Blank canvas generated');
+      }
+  
+      return canvas;
+  
     } catch (error) {
-      alert(translations[selectedLanguage]['downloadError']);
+      console.error('Canvas generation failed:', error);
+      return null;
     }
   };
+
+  // Helper functions
+  const blobToDataURL = blob =>
+    new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.readAsDataURL(blob);
+    });
+
+  const loadImage = src =>
+    new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.src = src;
+    });
 
   // UI handlers
   const toggleDarkMode = () => setIsDark(prev => !prev);
   const handleLanguageChange = (event) => setSelectedLanguage(event.target.value);
 
   return (
-    <div className={`min-h-screen ${isDark ? 'dark bg-gray-900' : 'bg-gray-100 transition-colors duration-300'}`}>
-      <div className="max-w-2xl px-4 py-8 mx-auto">
+    <div className={`min-h-screen ${isDark ? 'bg-gray-900 dark' : 'bg-gray-100 transition-colors duration-300'}`}>
+      <div className="px-4 py-8 mx-auto max-w-2xl">
         {/* Header section */}
         <div className="flex items-center mb-4">
-          <div className="flex items-center justify-center w-10 h-10 mr-2 bg-gray-300 rounded-full dark:bg-gray-700">
+          <div className="flex justify-center items-center mr-2 w-10 h-10 bg-gray-300 rounded-full dark:bg-gray-700">
             <img className="w-12" src="chinchillaqr.webp" alt="Chinchilla QR Logo" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Chinchilla QR</h1>
         </div>
 
         {/* Control bar */}
-        <div className="flex items-center justify-between mt-2 mb-4">
+        <div className="flex justify-between items-center mt-2 mb-4">
           <div className="inline-flex p-1 bg-gray-200 rounded-lg dark:bg-gray-800">
             {['vcard', 'text', 'url'].map((tab) => (
               <button
@@ -165,14 +279,14 @@ END:VCARD`;
             <select
               value={selectedLanguage}
               onChange={handleLanguageChange}
-              className="px-2 py-1 ml-4 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+              className="px-2 py-1 ml-4 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
             >
               <option value="en">English</option>
               <option value="es">Español</option>
             </select>
             <button
               onClick={toggleDarkMode}
-              className="flex items-center justify-center w-10 h-10 p-2 ml-2 text-white transition-colors duration-300 rounded-full bg-neutral-400 hover:bg-neutral-500 dark:bg-gray-700"
+              className="flex justify-center items-center p-2 ml-2 w-10 h-10 text-white rounded-full transition-colors duration-300 bg-neutral-400 hover:bg-neutral-500 dark:bg-gray-700"
             >
               {isDark ? '🌞' : '🌜'}
             </button>
@@ -180,7 +294,7 @@ END:VCARD`;
         </div>
 
         {/* Main content area */}
-        <div className="p-6 bg-white shadow-sm dark:bg-gray-800 rounded-2xl">
+        <div className="p-6 bg-white rounded-2xl shadow-sm dark:bg-gray-800">
           {activeTab === 'vcard' && (
             <div className="space-y-6">
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -191,7 +305,7 @@ END:VCARD`;
                     type="text"
                     value={vCardData.firstName}
                     onChange={(e) => setVCardData({ ...vCardData, firstName: e.target.value })}
-                    className="w-full px-4 py-3 text-gray-900 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="px-4 py-3 w-full text-gray-900 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder={translations[selectedLanguage]['placeholderFirstName']}
                   />
                 </div>
@@ -201,7 +315,7 @@ END:VCARD`;
                     type="text"
                     value={vCardData.lastName}
                     onChange={(e) => setVCardData({ ...vCardData, lastName: e.target.value })}
-                    className="w-full px-4 py-3 text-gray-900 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="px-4 py-3 w-full text-gray-900 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder={translations[selectedLanguage]['placeholderLastName']}
                   />
                 </div>
@@ -213,7 +327,7 @@ END:VCARD`;
                     type="text"
                     value={vCardData.position}
                     onChange={(e) => setVCardData({ ...vCardData, position: e.target.value })}
-                    className="w-full px-4 py-3 text-gray-900 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="px-4 py-3 w-full text-gray-900 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder={translations[selectedLanguage]['placeholderPosition']}
                   />
                 </div>
@@ -223,7 +337,7 @@ END:VCARD`;
                     type="text"
                     value={vCardData.company}
                     onChange={(e) => setVCardData({ ...vCardData, company: e.target.value })}
-                    className="w-full px-4 py-3 text-gray-900 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="px-4 py-3 w-full text-gray-900 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder={translations[selectedLanguage]['placeholderCompany']}
                   />
                 </div>
@@ -235,7 +349,7 @@ END:VCARD`;
                     type="tel"
                     value={vCardData.phone}
                     onChange={(e) => setVCardData({ ...vCardData, phone: e.target.value })}
-                    className="w-full px-4 py-3 text-gray-900 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="px-4 py-3 w-full text-gray-900 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder={translations[selectedLanguage]['placeholderPhone']}
                   />
                 </div>
@@ -245,7 +359,7 @@ END:VCARD`;
                     type="email"
                     value={vCardData.email}
                     onChange={(e) => setVCardData({ ...vCardData, email: e.target.value })}
-                    className="w-full px-4 py-3 text-gray-900 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="px-4 py-3 w-full text-gray-900 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder={translations[selectedLanguage]['placeholderEmail']}
                   />
                 </div>
@@ -257,7 +371,7 @@ END:VCARD`;
                     type="text"
                     value={vCardData.note}
                     onChange={(e) => setVCardData({ ...vCardData, note: e.target.value })}
-                    className="w-full px-4 py-3 text-gray-900 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="px-4 py-3 w-full text-gray-900 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder={translations[selectedLanguage]['placeholderNote']}
                   />
                 </div>
@@ -269,7 +383,7 @@ END:VCARD`;
                     <select
                       value={qrResolution}
                       onChange={(e) => setQrResolution(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                      className="px-3 py-2 w-full rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                     >
                       <option value="200">200px</option>
                       <option value="500">500px</option>
@@ -288,7 +402,7 @@ END:VCARD`;
                             className="w-10 h-10 rounded"
                           />
                           <span
-                            className="absolute inset-0 flex items-center justify-center text-lg cursor-pointer"
+                            className="flex absolute inset-0 justify-center items-center text-lg cursor-pointer"
                             onClick={() => setIsNegative(prev => !prev)}
                             title={translations[selectedLanguage]['invertColor']}
                           >
@@ -307,15 +421,15 @@ END:VCARD`;
                   <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                     {/* Left Column */}
                     <div className="space-y-6">
-                      <div className="p-6 bg-white border border-gray-300 rounded-lg shadow-sm dark:border-gray-600 dark:bg-gray-700">
+                      <div className="p-6 bg-white rounded-lg border border-gray-300 shadow-sm dark:border-gray-600 dark:bg-gray-700">
                         <div className="relative">
                           <img
                             src={getQRCodeUrl(vCardData, 'vcard')}
                             alt="QR Code"
-                            className="w-48 h-48 mx-auto"
+                            className="mx-auto w-48 h-48"
                           />
                           {logoData && (
-                            <div className="absolute transform -translate-x-1/2 -translate-y-1/2 top-1/2 left-1/2">
+                            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
                               <img
                                 src={logoData}
                                 alt="Logo"
@@ -335,7 +449,7 @@ END:VCARD`;
                         </label>
 
                         <div
-                          className="relative p-6 transition-colors border-2 border-gray-300 border-dashed rounded-lg dark:border-gray-600 hover:border-blue-500 dark:hover:border-blue-400 group"
+                          className="relative p-6 rounded-lg border-2 border-gray-300 border-dashed transition-colors dark:border-gray-600 hover:border-blue-500 dark:hover:border-blue-400 group"
                           onDragOver={(e) => {
                             e.preventDefault();
                             e.currentTarget.classList.add('border-blue-500', 'dark:border-blue-400');
@@ -369,7 +483,7 @@ END:VCARD`;
                             id="file-upload"
                           />
 
-                          <div className="flex flex-col items-center justify-center space-y-2">
+                          <div className="flex flex-col justify-center items-center space-y-2">
                             <svg
                               className="w-8 h-8 text-gray-400 transition-colors dark:text-gray-500 group-hover:text-blue-500 dark:group-hover:text-blue-400"
                               fill="none"
@@ -394,7 +508,7 @@ END:VCARD`;
                         </div>
 
                         {logoData && (
-                          <div className="flex items-center justify-between px-4 py-2 mt-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+                          <div className="flex justify-between items-center px-4 py-2 mt-3 bg-gray-50 rounded-lg dark:bg-gray-800">
                             <span className="text-sm text-gray-700 truncate dark:text-gray-300">
                               {translations[selectedLanguage]['uploadedLogo']}
                             </span>
@@ -403,7 +517,7 @@ END:VCARD`;
                               className="flex items-center text-sm font-medium text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
                             >
                               <svg
-                                className="w-4 h-4 mr-1"
+                                className="mr-1 w-4 h-4"
                                 fill="none"
                                 stroke="currentColor"
                                 viewBox="0 0 24 24"
@@ -420,7 +534,7 @@ END:VCARD`;
 
                   <button
                     onClick={() => downloadQR(vCardData, 'vcard', 'contact')}
-                    className="w-full px-4 py-3 font-medium text-white transition-colors bg-blue-500 rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                    className="px-4 py-3 w-full font-medium text-white bg-blue-500 rounded-lg transition-colors hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                   >
                     {translations[selectedLanguage]['saveToPhotos']}
                   </button>
@@ -437,7 +551,7 @@ END:VCARD`;
                   type="text"
                   value={textData}
                   onChange={(e) => setTextData(e.target.value)}
-                  className="w-full px-4 py-3 text-gray-900 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="px-4 py-3 w-full text-gray-900 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder={translations[selectedLanguage]['placeholderTextContent']}
                 />
               </div>
@@ -447,15 +561,15 @@ END:VCARD`;
                   <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                     {/* Left Column */}
                     <div className="space-y-6">
-                      <div className="p-6 bg-white border border-gray-300 rounded-lg shadow-sm dark:border-gray-600 dark:bg-gray-700">
+                      <div className="p-6 bg-white rounded-lg border border-gray-300 shadow-sm dark:border-gray-600 dark:bg-gray-700">
                         <div className="relative">
                           <img
                             src={getQRCodeUrl(textData)}
                             alt="QR Code"
-                            className="w-48 h-48 mx-auto"
+                            className="mx-auto w-48 h-48"
                           />
                           {logoData && (
-                            <div className="absolute transform -translate-x-1/2 -translate-y-1/2 top-1/2 left-1/2">
+                            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
                               <img
                                 src={logoData}
                                 alt="Logo"
@@ -472,7 +586,7 @@ END:VCARD`;
                           <select
                             value={qrResolution}
                             onChange={(e) => setQrResolution(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                            className="px-3 py-2 w-full rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                           >
                             <option value="200">200px</option>
                             <option value="500">500px</option>
@@ -491,7 +605,7 @@ END:VCARD`;
                                   className="w-10 h-10 rounded"
                                 />
                                 <span
-                                  className="absolute inset-0 flex items-center justify-center text-lg cursor-pointer"
+                                  className="flex absolute inset-0 justify-center items-center text-lg cursor-pointer"
                                   onClick={() => setIsNegative(prev => !prev)}
                                   title={translations[selectedLanguage]['invertColor']}
                                 >
@@ -523,7 +637,7 @@ END:VCARD`;
                               reader.readAsDataURL(file);
                             }
                           }}
-                          className="w-full px-3 py-2 mt-2 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                          className="px-3 py-2 mt-2 w-full rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                         />
                         {logoData && (
                           <button
@@ -539,7 +653,7 @@ END:VCARD`;
 
                   <button
                     onClick={() => downloadQR(textData, 'text', 'text-qr')}
-                    className="w-full px-4 py-3 font-medium text-white transition-colors bg-blue-500 rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                    className="px-4 py-3 w-full font-medium text-white bg-blue-500 rounded-lg transition-colors hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                   >
                     {translations[selectedLanguage]['saveToPhotos']}
                   </button>
@@ -556,7 +670,7 @@ END:VCARD`;
                   type="url"
                   value={urlData}
                   onChange={(e) => setUrlData(e.target.value)}
-                  className="w-full px-4 py-3 text-gray-900 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="px-4 py-3 w-full text-gray-900 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder={translations[selectedLanguage]['placeholderUrl']}
                 />
               </div>
@@ -566,15 +680,15 @@ END:VCARD`;
                   <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                     {/* Left Column */}
                     <div className="space-y-6">
-                      <div className="p-6 bg-white border border-gray-300 rounded-lg shadow-sm dark:border-gray-600 dark:bg-gray-700">
+                      <div className="p-6 bg-white rounded-lg border border-gray-300 shadow-sm dark:border-gray-600 dark:bg-gray-700">
                         <div className="relative">
                           <img
                             src={getQRCodeUrl(urlData)}
                             alt="QR Code"
-                            className="w-48 h-48 mx-auto"
+                            className="mx-auto w-48 h-48"
                           />
                           {logoData && (
-                            <div className="absolute transform -translate-x-1/2 -translate-y-1/2 top-1/2 left-1/2">
+                            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
                               <img
                                 src={logoData}
                                 alt="Logo"
@@ -591,7 +705,7 @@ END:VCARD`;
                           <select
                             value={qrResolution}
                             onChange={(e) => setQrResolution(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                            className="px-3 py-2 w-full rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                           >
                             <option value="200">200px</option>
                             <option value="500">500px</option>
@@ -610,7 +724,7 @@ END:VCARD`;
                                   className="w-10 h-10 rounded"
                                 />
                                 <span
-                                  className="absolute inset-0 flex items-center justify-center text-lg cursor-pointer"
+                                  className="flex absolute inset-0 justify-center items-center text-lg cursor-pointer"
                                   onClick={() => setIsNegative(prev => !prev)}
                                   title={translations[selectedLanguage]['invertColor']}
                                 >
@@ -642,7 +756,7 @@ END:VCARD`;
                               reader.readAsDataURL(file);
                             }
                           }}
-                          className="w-full px-3 py-2 mt-2 border border-gray-300 rounded-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                          className="px-3 py-2 mt-2 w-full rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                         />
                         {logoData && (
                           <button
@@ -658,7 +772,7 @@ END:VCARD`;
 
                   <button
                     onClick={() => downloadQR(urlData, 'text', 'url-qr')}
-                    className="w-full px-4 py-3 font-medium text-white transition-colors bg-blue-500 rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                    className="px-4 py-3 w-full font-medium text-white bg-blue-500 rounded-lg transition-colors hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                   >
                     {translations[selectedLanguage]['saveToPhotos']}
                   </button>
