@@ -82,70 +82,58 @@ END:VCARD`;
     const tryDownload = async () => {
       try {
         attempt++;
-        // Strategy 1: Direct base64 download for Telegram
-        if (window.Telegram?.WebApp?.downloadFile) {
-          const qrUrl = getQRCodeUrl(data, type);
-          const response = await fetch(qrUrl);
-          if (!response.ok) throw new Error('Network response error');
-          
-          // Convert directly to base64
-          const buffer = await response.arrayBuffer();
-          const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
-          window.Telegram.WebApp.downloadFile(base64, `${filename}.png`);
-          return;
-        }
-  
-        // Strategy 2: Canvas-based download with forced user gesture
+        
+        // Generate QR canvas first
         const canvas = await generateQRCanvas(data, type);
         if (!canvas) throw new Error('Canvas generation failed');
-  
-        // Strategy 3: Mixed blob/base64 approach
+        
+        // Get data URL from canvas
+        const dataUrl = canvas.toDataURL('image/png');
+        
+        // Telegram WebApp specific handling
+        if (window.Telegram?.WebApp) {
+          // For newer Telegram WebApp versions
+          if (window.Telegram.WebApp.showPopup) {
+            // Show a popup with the QR code
+            const popupParams = {
+              title: translations[selectedLanguage]['saveToPhotos'],
+              message: translations[selectedLanguage]['clickToSave'],
+              buttons: [{type: "default", text: "OK"}]
+            };
+            
+            // Open the image in a new window when popup is closed
+            window.Telegram.WebApp.showPopup(popupParams, () => {
+              window.open(dataUrl, '_blank');
+            });
+            return;
+          }
+          
+          // For older Telegram WebApp versions
+          if (window.Telegram.WebApp.openLink) {
+            window.Telegram.WebApp.openLink(dataUrl);
+            return;
+          }
+        }
+        
+        // Fallback for non-Telegram environments
         const blob = await new Promise(resolve => 
           canvas.toBlob(resolve, 'image/png', 1)
         );
         
-        // Strategy 4: Multiple download methods
-        const finalAttempt = async () => {
-          try {
-            // Method 4a: Direct file API
-            if (window.Telegram?.WebApp?.openLink) {
-              const dataUrl = canvas.toDataURL();
-              window.Telegram.WebApp.openLink(dataUrl);
-              return;
-            }
-  
-            // Method 4b: Simulated click with blob
-            const url = URL.createObjectURL(blob);
-            const tempLink = document.createElement('a');
-            tempLink.href = url;
-            tempLink.download = `${filename}.png`;
-            tempLink.style.display = 'none';
-            
-            // iOS requires actual user interaction
-            const clickEvent = new MouseEvent('click', {
-              view: window,
-              bubbles: true,
-              cancelable: true
-            });
-            
-            document.body.appendChild(tempLink);
-            tempLink.dispatchEvent(clickEvent);
-            
-            // Cleanup with retry safeguard
-            setTimeout(() => {
-              document.body.removeChild(tempLink);
-              URL.revokeObjectURL(url);
-            }, 1000);
-  
-          } catch (error) {
-            // Final fallback: Open in new tab
-            const dataUrl = canvas.toDataURL();
-            window.open(dataUrl, '_blank');
-          }
-        };
-  
-        // Execute final attempt sequence
-        await finalAttempt();
+        const url = URL.createObjectURL(blob);
+        const tempLink = document.createElement('a');
+        tempLink.href = url;
+        tempLink.download = `${filename}.png`;
+        tempLink.style.display = 'none';
+        
+        document.body.appendChild(tempLink);
+        tempLink.click();
+        
+        // Cleanup
+        setTimeout(() => {
+          document.body.removeChild(tempLink);
+          URL.revokeObjectURL(url);
+        }, 1000);
   
       } catch (error) {
         if (attempt < MAX_RETRIES) {
@@ -255,7 +243,10 @@ END:VCARD`;
           <div className="flex justify-center items-center mr-2 w-10 h-10 bg-gray-300 rounded-full dark:bg-gray-700">
             <img className="w-12" src="chinchillaqr.webp" alt="Chinchilla QR Logo" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Chinchilla QR</h1>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Chinchilla QR</h1>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">A simple and powerful QR code generator</p>
+          </div>
         </div>
 
         {/* Control bar */}
