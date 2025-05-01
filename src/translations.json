@@ -29,7 +29,8 @@
     "dragDrop": "or drag and drop",
     "supportedFormats": "SVG, PNG, JPG (max 2MB)",
     "uploadedLogo": "Logo uploaded",
-    "invertColor": "Invert colors"
+    "invertColor": "Invert colors",
+    "appDescription": "A simple and powerful QR code generator"
   },
   "es": {
     "vcard": "Contacto",
@@ -61,6 +62,7 @@
     "dragDrop": "o arrastra y suelta",
     "supportedFormats": "SVG, PNG, JPG (máx. 2MB)",
     "uploadedLogo": "Logo subido",
-    "invertColor": "Invertir colores"
+    "invertColor": "Invertir colores",
+    "appDescription": "Un generador de códigos QR simple y poderoso"
   }
 }

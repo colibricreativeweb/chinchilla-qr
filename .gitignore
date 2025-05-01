@@ -29,6 +29,7 @@ dev-dist
 .DS_Store
 *.pem
 package-lock.json
+bun.lock
 
 # debug
 npm-debug.log*
